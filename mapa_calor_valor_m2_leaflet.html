@@ -1,0 +1,1093 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mapa por Bairros - Valor médio do m² (ITBI)</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Segoe UI, Roboto, Arial, sans-serif; background: #f5f5f5; }
+    #header { background: linear-gradient(135deg, #00c6ff 0%, #0072ff 100%); color: white; padding: 18px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    #header h1 { font-size: 20px; margin-bottom: 6px; }
+    #header p { font-size: 13px; opacity: 0.92; }
+    #controls { background: white; padding: 12px 18px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; box-shadow: 0 2px 5px rgba(0,0,0,0.08); }
+    #map { width: 100%; height: calc(100vh - 120px); }
+
+    #legend { position: absolute; bottom: 24px; left: 18px; background: white; padding: 12px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.15); z-index: 1000; min-width: 260px; }
+    #legend h3 { font-size: 13px; margin-bottom: 0; color: #333; }
+    .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
+    .legend-color { width: 28px; height: 16px; border-radius: 4px; border: 1px solid #ddd; }
+    .legend-gradient {
+      height: 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(0,0,0,0.12);
+      width: 100%;
+      max-width: 360px;
+    }
+    .legend-scale-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 11px;
+      color: #555;
+      margin-top: 6px;
+    }
+
+    #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 22px 24px; border-radius: 10px; box-shadow: 0 4px 18px rgba(0,0,0,0.2); z-index: 2000; text-align: center; }
+    #loading.hidden { display: none; }
+    .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #0072ff; border-radius: 50%; width: 36px; height: 36px; animation: spin 1s linear infinite; margin: 0 auto 12px; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    #status { position: absolute; top: 18px; right: 18px; background: white; padding: 10px 14px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); z-index: 1000; font-size: 12px; min-width: 220px; }
+    .status-item { margin: 4px 0; }
+    .status-label { font-weight: 700; color: #0072ff; }
+
+    button.primary { padding: 8px 14px; background: #0072ff; color: white; border: none; border-radius: 6px; cursor: pointer; }
+    button.secondary { padding: 8px 14px; background: #f0f0f0; color: #333; border: none; border-radius: 6px; cursor: pointer; }
+    #notice { background: #fff6e5; color: #9a6400; padding: 8px 12px; font-size: 12px; border-radius: 6px; }
+
+    /* Tooltip */
+    .bairro-tooltip { background: rgba(255,255,255,0.95); border: 1px solid rgba(0,0,0,0.12); box-shadow: 0 2px 10px rgba(0,0,0,0.12); border-radius: 8px; padding: 8px 10px; }
+    .bairro-tooltip b { color: #0b57d0; }
+
+    /* Janelas (painéis) móveis/retráteis */
+    .panel {
+      user-select: none;
+      resize: both;
+      overflow: hidden;
+      min-width: 220px;
+      min-height: 54px;
+    }
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      cursor: move;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #eee;
+    }
+    .panel-header .title { font-size: 13px; font-weight: 700; color: #222; }
+    .panel-header .actions { display: flex; gap: 8px; align-items: center; }
+    .panel-header .btn {
+      font-size: 11px;
+      padding: 5px 8px;
+      background: #f0f0f0;
+      border-radius: 999px;
+      cursor: pointer;
+      border: none;
+    }
+    .panel-body {
+      user-select: text;
+      overflow: auto;
+      max-height: calc(100% - 34px);
+      padding-top: 8px;
+    }
+    .panel.collapsed {
+      resize: none;
+      min-height: unset;
+    }
+    .panel.collapsed .panel-body { display: none; }
+
+    /* Painel de logradouros */
+    #logradouros-panel {
+      position: absolute;
+      top: 18px;
+      left: 18px;
+      background: white;
+      padding: 12px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.18);
+      z-index: 1100;
+      width: 360px;
+      max-width: calc(100vw - 36px);
+      max-height: calc(100vh - 170px);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    #logradouros-panel h3 { font-size: 13px; color: #222; }
+    #logradouros-panel .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    #logradouros-panel input[type="text"] { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px; }
+    #logradouros-panel .list { overflow: auto; border-top: 1px solid #eee; padding-top: 8px; }
+    #logradouros-panel .item { display: flex; justify-content: space-between; gap: 10px; padding: 6px 6px; border-radius: 8px; cursor: pointer; }
+    #logradouros-panel .item:hover { background: #f6f9ff; }
+    #logradouros-panel .name { font-size: 12px; color: #222; }
+    #logradouros-panel .sub { font-size: 11px; color: #666; }
+    #logradouros-panel .val { font-size: 12px; font-weight: 700; color: #0b57d0; white-space: nowrap; }
+    #logradouros-panel .pill { font-size: 11px; padding: 5px 8px; background: #f0f0f0; border-radius: 999px; cursor: pointer; }
+    #logradouros-panel .pill.active { background: #dbe9ff; color: #0b57d0; }
+    #logradouros-panel .hint { font-size: 11px; color: #666; }
+
+    /* Painel de mapa de fundo */
+    #basemap-panel {
+      position: absolute;
+      top: 18px;
+      left: 18px;
+      background: white;
+      padding: 12px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.18);
+      z-index: 1090;
+      width: 280px;
+      max-width: calc(100vw - 36px);
+      max-height: calc(100vh - 170px);
+    }
+    #basemap-panel select {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: white;
+    }
+    #basemap-panel .btnrow { display:flex; gap:8px; flex-wrap:wrap; }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <h1>Mapa (RJ) — Valor do m² (ITBI) por bairro + logradouros</h1>
+    <p>Fonte: CSV local <code>itbi_valor_m2.csv</code> + limites de bairros (<code>rj_bairros_2022.geojson</code>).</p>
+  </div>
+
+  <div id="controls">
+    <button class="primary" id="refresh-btn">Recarregar CSV local</button>
+
+    <label class="secondary" style="cursor:pointer;">
+      Carregar outro CSV
+      <input type="file" id="csv-file-input" accept=".csv" style="display:none;" />
+    </label>
+
+    <label>
+      Métrica:
+      <select id="metric-select" style="padding:6px 10px;border:1px solid #ddd;border-radius:8px;">
+        <option value="m2">R$/m²</option>
+        <option value="imovel">Média valor do imóvel</option>
+      </select>
+    </label>
+
+    <label>
+      Opacidade:
+      <input type="range" id="opacity-slider" min="0.05" max="1" step="0.05" value="0.65" />
+    </label>
+
+    <label class="secondary" style="cursor:pointer;">
+      <input type="checkbox" id="toggle-bairro-fill" checked />
+      Colorir bairros
+    </label>
+
+    <label class="secondary" style="cursor:pointer;">
+      <input type="checkbox" id="toggle-logradouros" />
+      Mostrar logradouros (OSM)
+    </label>
+
+    <div id="notice">
+      Dica: bairros/logradouros passam por normalização (acentos/espacos). A camada de logradouros usa OpenStreetMap sob demanda (requer zoom mais alto).
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+  <div id="basemap-panel" class="panel collapsed">
+    <div class="panel-header" id="hdr-basemap">
+      <div class="title">Mapa de fundo</div>
+      <div class="actions">
+        <button class="btn" id="btn-collapse-basemap" type="button">Expandir</button>
+      </div>
+    </div>
+    <div class="panel-body" id="body-basemap">
+      <div style="font-size:11px;color:#666;margin-bottom:8px;">
+        Dica: “Satélite” é via Esri; outras opções são tiles públicos (OSM/Carto/OpenTopo).
+      </div>
+      <select id="basemap-select"></select>
+      <div class="btnrow" style="margin-top:10px;">
+        <button class="btn" id="btn-basemap-street" type="button">Rua</button>
+        <button class="btn" id="btn-basemap-sat" type="button">Satélite</button>
+        <button class="btn" id="btn-basemap-dark" type="button">Escuro</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="logradouros-panel" class="panel">
+    <div class="panel-header" id="hdr-logradouros">
+      <div class="title">Logradouros (R$/m²) — ranking</div>
+      <div class="actions">
+        <span class="hint" id="osm-status">OSM: desligado</span>
+        <button class="btn" id="btn-collapse-logradouros" type="button">Recolher</button>
+      </div>
+    </div>
+    <div class="panel-body" id="body-logradouros">
+      <div class="row">
+        <span class="pill active" id="tab-top">Mais caros</span>
+        <span class="pill" id="tab-bottom">Mais baratos</span>
+        <span class="pill" id="tab-bairros">Bairros</span>
+      </div>
+      <input id="search" type="text" placeholder="Filtrar por nome (ex: Vieira Souto, Atlântica, Copacabana)..." />
+      <div class="list" id="list"></div>
+      <div class="hint" id="panel-hint">Clique em um item para tentar localizar no mapa (se o logradouro estiver carregado na área atual).</div>
+    </div>
+  </div>
+
+  <div id="legend" class="panel">
+    <div class="panel-header" id="hdr-legend">
+      <div class="title">Legendas</div>
+      <div class="actions">
+        <button class="btn" id="btn-collapse-legend" type="button">Recolher</button>
+      </div>
+    </div>
+    <div class="panel-body" id="body-legend">
+      <div id="legend-items"></div>
+    </div>
+  </div>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <div>Carregando…</div>
+    <div id="loading-status" style="margin-top: 8px; font-size: 12px; color: #555;"></div>
+  </div>
+
+  <div id="status" class="panel">
+    <div class="panel-header" id="hdr-status">
+      <div class="title">Status</div>
+      <div class="actions">
+        <button class="btn" id="btn-collapse-status" type="button">Recolher</button>
+      </div>
+    </div>
+    <div class="panel-body" id="body-status">
+      <div class="status-item"><span class="status-label">Métrica:</span> <span id="metric-name">—</span></div>
+      <div class="status-item"><span class="status-label">Coluna CSV:</span> <span id="metric-col">—</span></div>
+      <div class="status-item"><span class="status-label">Registros CSV:</span> <span id="total-records">0</span></div>
+      <div class="status-item"><span class="status-label">Com valor válido:</span> <span id="valid-records">0</span></div>
+      <div class="status-item"><span class="status-label">Bairros com valor:</span> <span id="bairros-count">0</span></div>
+      <div class="status-item"><span class="status-label">Faixa (p05–p95):</span> <span id="range">—</span></div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script>
+    const LOCAL_CSV = 'itbi_valor_m2.csv';
+    const GEOJSON_RIO = 'rj_bairros_2022.geojson';
+    const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+
+    const loadingEl = document.getElementById('loading');
+    const loadingStatusEl = document.getElementById('loading-status');
+
+    let map;
+    let geojsonLayer;
+    let osmLayer;
+    let bairroValues = {}; // normalized -> mean value
+    let minValue = 0;
+    let maxValue = 0;
+    let bairroP05 = 0;
+    let bairroP95 = 0;
+    let opacity = 0.65;
+    let bairroFillEnabled = true;
+
+    const METRICS = {
+      m2: { key: 'm2', label: 'R$/m²', unit: ' / m²' },
+      imovel: { key: 'imovel', label: 'Média valor do imóvel', unit: '' },
+    };
+    let activeMetric = 'm2';
+    let metricColumnLabel = {}; // metricKey -> header label found
+    let csvTotalRows = 0;
+    let csvValidRowsByMetric = {}; // metricKey -> valid count
+    let bairroMeansByMetric = {};  // metricKey -> {bairroKey: mean}
+    let logMeansByMetric = {};     // metricKey -> {logKey: mean}
+    let bairroStatsByMetric = {};  // metricKey -> {p05,p95,min,max}
+    let logStatsByMetric = {};     // metricKey -> {p05,p95,min,max}
+    let logRawByKey = {};          // logKey -> last raw seen
+    let logBairroByKey = {};       // logKey -> last bairro raw seen
+    let logCountByMetric = {};     // metricKey -> {logKey: count}
+
+    // Logradouros (CSV)
+    let logradouroValues = {}; // normalized logradouro -> mean value
+    let logradouroBairro = {}; // normalized logradouro -> bairro (mais frequente/último observado)
+    let logradouroCount = {};  // normalized logradouro -> quantidade
+    let logMin = 0;
+    let logMax = 0;
+    let logP05 = 0;
+    let logP95 = 0;
+    let topLogradouros = [];   // [{nameRaw, nameKey, value, bairro, n}]
+    let bottomLogradouros = [];
+    const osmIndex = new Map(); // normalized name -> array de layers
+    const osmCache = new Map(); // bboxKey -> geojson
+    let osmEnabled = false;
+    let currentTab = 'top'; // top | bottom | bairros
+
+    function setLoading(msg) {
+      loadingEl.classList.remove('hidden');
+      loadingStatusEl.textContent = msg || '';
+      loadingStatusEl.style.color = '#555';
+    }
+
+    function hideLoading() {
+      loadingEl.classList.add('hidden');
+    }
+
+    function normalizeName(str) {
+      return (str || '')
+        .toString()
+        .normalize('NFD')
+        .replace(/\p{Diacritic}/gu, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+    }
+
+    function parseBRL(value) {
+      if (value === null || value === undefined) return null;
+      const cleaned = String(value)
+        .replace(/[^0-9,.-]/g, '')
+        .replace(/\./g, '')
+        .replace(',', '.')
+        .trim();
+      if (!cleaned) return null;
+      const num = Number(cleaned);
+      return Number.isFinite(num) ? num : null;
+    }
+
+    function percentile(sorted, p) {
+      if (!sorted.length) return 0;
+      const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor(p * (sorted.length - 1))));
+      return sorted[idx];
+    }
+
+    function normalizeHeader(str) {
+      return normalizeName(str).replace(/[^a-z0-9_/$]/g, '');
+    }
+
+    function colorScaleBlueRed(value, lo, hi) {
+      if (!Number.isFinite(value) || hi === lo) return '#cfd8dc';
+      const t = Math.min(1, Math.max(0, (value - lo) / Math.max(1e-6, (hi - lo))));
+      const lerp = (a,b,x) => Math.round(a + (b-a)*x);
+      const a = [144, 202, 249]; // #90caf9
+      const b = [239, 83, 80];   // #ef5350
+      const c = [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+      return `rgb(${c[0]},${c[1]},${c[2]})`;
+    }
+
+    function parseCSVSemicolon(text) {
+      const rows = [];
+      let current = [];
+      let cell = '';
+      let inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        const next = text[i + 1];
+        if (ch === '"') {
+          if (inQuotes && next === '"') { cell += '"'; i++; }
+          else { inQuotes = !inQuotes; }
+        } else if (ch === ';' && !inQuotes) {
+          current.push(cell); cell = '';
+        } else if ((ch === '\n' || ch === '\r') && !inQuotes) {
+          if (cell || current.length) { current.push(cell); rows.push(current); current = []; cell = ''; }
+          if (ch === '\r' && next === '\n') i++;
+        } else {
+          cell += ch;
+        }
+      }
+      if (cell || current.length) { current.push(cell); rows.push(current); }
+      return rows;
+    }
+
+    function colorForValue(value) {
+      // Bairros: azul claro (barato) -> vermelho (caro), com clamp em p05–p95
+      return colorScaleBlueRed(value, bairroP05, bairroP95);
+    }
+
+    function colorForLogradouro(value) {
+      // azul claro -> vermelho, usando escala "clamp" por percentis para evitar outliers
+      return colorScaleBlueRed(value, logP05, logP95);
+    }
+
+    function styleFeature(feature) {
+      const nome = feature.properties?.nome || feature.properties?.NM_BAIRRO || feature.properties?.bairro || '';
+      const key = normalizeName(nome);
+      const v = bairroValues[key];
+      const has = Number.isFinite(v);
+      return {
+        color: '#555',
+        weight: 0.8,
+        opacity: has ? Math.max(0.14, 0.25 * opacity) : 0.15,
+        fillColor: colorForValue(v),
+        fillOpacity: (bairroFillEnabled && has) ? Math.min(0.75, 0.6 * opacity) : 0.0,
+      };
+    }
+
+    function updateLegend() {
+      const el = document.getElementById('legend-items');
+      el.innerHTML = '';
+      if (!Object.keys(bairroValues).length || maxValue === minValue) {
+        el.innerHTML = '<div style="font-size:12px;color:#666;">Sem dados suficientes para legenda.</div>';
+        return;
+      }
+
+      // Legenda de bairros: azul -> vermelho (p05 -> p95)
+      const bTitle = document.createElement('div');
+      bTitle.style.fontSize = '12px';
+      bTitle.style.fontWeight = '700';
+      bTitle.style.color = '#333';
+      bTitle.style.margin = '2px 0 8px 0';
+      bTitle.textContent = `Bairros: ${METRICS[activeMetric]?.label || activeMetric} (azul → vermelho, p05–p95)`;
+      el.appendChild(bTitle);
+
+      const bGrad = document.createElement('div');
+      bGrad.className = 'legend-gradient';
+      bGrad.style.background = `linear-gradient(90deg, ${colorScaleBlueRed(bairroP05, bairroP05, bairroP95)} 0%, ${colorScaleBlueRed(bairroP95, bairroP05, bairroP95)} 100%)`;
+      el.appendChild(bGrad);
+
+      const bScale = document.createElement('div');
+      bScale.className = 'legend-scale-row';
+      bScale.innerHTML = `
+        <span>${bairroP05.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}${METRICS[activeMetric]?.unit || ''}</span>
+        <span>${bairroP95.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}${METRICS[activeMetric]?.unit || ''}</span>
+      `;
+      el.appendChild(bScale);
+
+      // Legenda de logradouros (OSM): azul -> vermelho (p05 -> p95)
+      if (Object.keys(logradouroValues).length) {
+        const sep = document.createElement('div');
+        sep.style.margin = '8px 0';
+        sep.style.borderTop = '1px solid #eee';
+        el.appendChild(sep);
+
+        const title = document.createElement('div');
+        title.style.fontSize = '12px';
+        title.style.fontWeight = '700';
+        title.style.color = '#333';
+        title.style.margin = '6px 0';
+        title.textContent = `Logradouros (OSM): ${METRICS[activeMetric]?.label || activeMetric} (azul → vermelho, p05–p95)`;
+        el.appendChild(title);
+
+        const lGrad = document.createElement('div');
+        lGrad.className = 'legend-gradient';
+        lGrad.style.background = `linear-gradient(90deg, ${colorScaleBlueRed(logP05, logP05, logP95)} 0%, ${colorScaleBlueRed(logP95, logP05, logP95)} 100%)`;
+        el.appendChild(lGrad);
+
+        const lScale = document.createElement('div');
+        lScale.className = 'legend-scale-row';
+        lScale.innerHTML = `
+          <span>${logP05.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}${METRICS[activeMetric]?.unit || ''}</span>
+          <span>${logP95.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}${METRICS[activeMetric]?.unit || ''}</span>
+        `;
+        el.appendChild(lScale);
+      }
+    }
+
+    function updateStats(total, valid) {
+      document.getElementById('metric-name').textContent = METRICS[activeMetric]?.label || activeMetric;
+      document.getElementById('metric-col').textContent = metricColumnLabel[activeMetric] || '—';
+      document.getElementById('total-records').textContent = String(total);
+      document.getElementById('valid-records').textContent = String(valid);
+      document.getElementById('bairros-count').textContent = String(Object.keys(bairroValues).length);
+      document.getElementById('range').textContent = (bairroP95 && bairroP05)
+        ? `${bairroP05.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} → ${bairroP95.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}`
+        : '—';
+    }
+
+    async function loadGeojsonOnce() {
+      if (geojsonLayer) return;
+      setLoading('Carregando GeoJSON de bairros…');
+      const res = await fetch(`${GEOJSON_RIO}?v=${Date.now()}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error('Não foi possível carregar o GeoJSON.');
+      const geojson = await res.json();
+
+      geojsonLayer = L.geoJSON(geojson, {
+        style: styleFeature,
+        onEachFeature: (feature, layer) => {
+          const getTooltipHtml = () => {
+            const nome = feature.properties?.nome || feature.properties?.NM_BAIRRO || feature.properties?.bairro || 'Bairro';
+            const key = normalizeName(nome);
+            const v = bairroValues[key];
+            const txt = Number.isFinite(v)
+              ? `${v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} / m²`
+              : 'Sem dado';
+            return `<div class='bairro-tooltip'><b>${nome}</b><div>${txt}</div></div>`;
+          };
+          layer.on('mouseover', () => {
+            layer.setStyle({ weight: 1.6, color: '#0b57d0' });
+            layer.bindTooltip(getTooltipHtml(), { sticky: true }).openTooltip();
+          });
+          layer.on('mouseout', () => {
+            geojsonLayer.resetStyle(layer);
+          });
+          layer.on('click', () => {
+            layer.bindTooltip(getTooltipHtml(), { sticky: true }).openTooltip();
+          });
+        }
+      }).addTo(map);
+
+      // enquadrar no RJ
+      const b = geojsonLayer.getBounds();
+      if (b && b.isValid()) map.fitBounds(b, { padding: [18, 18] });
+    }
+
+    function restyle() {
+      if (!geojsonLayer) return;
+      geojsonLayer.setStyle(styleFeature);
+    }
+
+    function restyleOSM() {
+      if (!osmLayer) return;
+      osmLayer.setStyle((f) => {
+        const name = f.properties?.name || '';
+        const key = normalizeName(name);
+        const v = logradouroValues[key];
+        const has = Number.isFinite(v);
+        return {
+          color: has ? colorForLogradouro(v) : '#9e9e9e',
+          weight: has ? 3.2 : 2.0,
+          opacity: has ? 0.95 : 0.35
+        };
+      });
+    }
+
+    function bboxKeyFromBounds(bounds) {
+      // arredonda para reduzir cache e respeitar limites do Overpass
+      const s = bounds.getSouth().toFixed(3);
+      const w = bounds.getWest().toFixed(3);
+      const n = bounds.getNorth().toFixed(3);
+      const e = bounds.getEast().toFixed(3);
+      return `${s},${w},${n},${e}`;
+    }
+
+    function overpassQueryForBounds(bounds) {
+      const s = bounds.getSouth();
+      const w = bounds.getWest();
+      const n = bounds.getNorth();
+      const e = bounds.getEast();
+      // vias com "name" dentro da bbox
+      return `[out:json][timeout:25];(way[\"highway\"][\"name\"](${s},${w},${n},${e}););(._;>;);out body;`;
+    }
+
+    function overpassToGeoJSON(data) {
+      const nodes = new Map();
+      const features = [];
+      for (const el of (data.elements || [])) {
+        if (el.type === 'node') nodes.set(el.id, [el.lon, el.lat]);
+      }
+      for (const el of (data.elements || [])) {
+        if (el.type !== 'way') continue;
+        const name = el.tags && el.tags.name;
+        if (!name || !el.nodes || el.nodes.length < 2) continue;
+        const coords = [];
+        for (const nid of el.nodes) {
+          const c = nodes.get(nid);
+          if (c) coords.push(c);
+        }
+        if (coords.length < 2) continue;
+        features.push({
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: coords },
+          properties: { name }
+        });
+      }
+      return { type: 'FeatureCollection', features };
+    }
+
+    async function loadOSMInView(force = false) {
+      if (!osmEnabled) return;
+      if (map.getZoom() < 13) {
+        document.getElementById('osm-status').textContent = 'OSM: zoom ≥ 13';
+        return;
+      }
+
+      const bounds = map.getBounds();
+      const key = bboxKeyFromBounds(bounds);
+      document.getElementById('osm-status').textContent = 'OSM: carregando…';
+
+      let geojson = osmCache.get(key);
+      if (!geojson || force) {
+        const q = overpassQueryForBounds(bounds);
+        const res = await fetch(OVERPASS_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+          body: 'data=' + encodeURIComponent(q)
+        });
+        if (!res.ok) throw new Error('Falha ao carregar logradouros do OSM (Overpass).');
+        const data = await res.json();
+        geojson = overpassToGeoJSON(data);
+        osmCache.set(key, geojson);
+      }
+
+      // recria layer (mais simples)
+      osmIndex.clear();
+      if (osmLayer) {
+        try { osmLayer.remove(); } catch {}
+        osmLayer = null;
+      }
+
+      osmLayer = L.geoJSON(geojson, {
+        style: (f) => {
+          const name = f.properties?.name || '';
+          const k = normalizeName(name);
+          const v = logradouroValues[k];
+          const has = Number.isFinite(v);
+          return {
+            color: has ? colorForLogradouro(v) : '#9e9e9e',
+            weight: has ? 3.2 : 2.0,
+            opacity: has ? 0.95 : 0.35
+          };
+        },
+        onEachFeature: (feature, layer) => {
+          const name = feature.properties?.name || 'Logradouro';
+          const k = normalizeName(name);
+          const v = logradouroValues[k];
+          const txt = Number.isFinite(v)
+            ? `${v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} / m²`
+            : 'Sem dado no CSV';
+          layer.bindTooltip(`<div class='bairro-tooltip'><b>${name}</b><div>${txt}</div></div>`, { sticky: true });
+          const arr = osmIndex.get(k) || [];
+          arr.push(layer);
+          osmIndex.set(k, arr);
+        }
+      }).addTo(map);
+
+      document.getElementById('osm-status').textContent = `OSM: ${geojson.features.length} vias (na área)`;
+    }
+
+    function focusOnLogradouro(nameKey) {
+      const layers = osmIndex.get(nameKey);
+      if (!layers || !layers.length) return false;
+      const group = L.featureGroup(layers);
+      const b = group.getBounds();
+      if (b && b.isValid()) map.fitBounds(b.pad(0.2));
+      return true;
+    }
+
+    function renderPanel() {
+      const listEl = document.getElementById('list');
+      const q = normalizeName(document.getElementById('search').value || '');
+      let items = [];
+      if (currentTab === 'top') items = topLogradouros;
+      else if (currentTab === 'bottom') items = bottomLogradouros;
+      else items = Object.entries(bairroValues).map(([k,v]) => ({ nameRaw: k, nameKey: k, value: v, bairro: '', n: 0 }))
+        .sort((a,b) => (b.value||0) - (a.value||0))
+        .slice(0, 200);
+
+      const filtered = q ? items.filter(it => normalizeName(it.nameRaw).includes(q)) : items;
+      const sliced = filtered.slice(0, 60);
+
+      listEl.innerHTML = '';
+      if (!sliced.length) {
+        listEl.innerHTML = '<div class="hint">Nenhum item encontrado.</div>';
+        return;
+      }
+
+      for (const it of sliced) {
+        const div = document.createElement('div');
+        div.className = 'item';
+        const name = it.nameRaw;
+        const val = Number.isFinite(it.value)
+          ? it.value.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})
+          : '—';
+        const unit = METRICS[activeMetric]?.unit || '';
+        const sub = it.bairro ? `Bairro: ${it.bairro}` : (it.n ? `${it.n} registros` : '');
+        div.innerHTML = `
+          <div>
+            <div class="name">${name}</div>
+            <div class="sub">${sub}</div>
+          </div>
+          <div class="val">${val}${unit}</div>
+        `;
+
+        div.addEventListener('click', () => {
+          if (currentTab === 'bairros') {
+            // tentar focar no RJ inteiro já está ok; só dá um zoom leve no centro
+            return;
+          }
+          const ok = focusOnLogradouro(it.nameKey);
+          const hint = document.getElementById('panel-hint');
+          hint.textContent = ok
+            ? 'Localizado na área atual (via OSM).'
+            : 'Não achei esse logradouro nos dados OSM carregados. Ligue a camada OSM e dê zoom (≥ 13) na região.';
+        });
+        listEl.appendChild(div);
+      }
+    }
+
+    function computeAggregates(rows) {
+      if (!rows.length) throw new Error('CSV vazio.');
+
+      const headers = rows[0].map(h => String(h || '').toLowerCase());
+      const headersNorm = rows[0].map(h => normalizeHeader(String(h || '')));
+      // ATENÇÃO: 'codbairro' também contém 'bairro'. Preferir coluna 'bairro' exata.
+      let idxBairro = headers.findIndex(h => h.trim() === 'bairro');
+      if (idxBairro === -1) idxBairro = headers.findIndex(h => h.includes('bairro') && !h.includes('cod'));
+      const idxLogradouro = headers.findIndex(h => h.includes('logradouro'));
+      if (idxBairro === -1) throw new Error('Coluna "bairro" não encontrada.');
+
+      // localizar colunas por métrica
+      const metricIdx = { m2: -1, imovel: -1 };
+      // m2: "r$/m²" ou "r$/m2" etc
+      metricIdx.m2 = headers.findIndex(h => /r\$\s*\/\s*m/.test(h) || h.includes('r$/m2') || h.includes('r$/m'));
+      // imovel: "média_valor_imóvel"
+      metricIdx.imovel = headersNorm.findIndex(h => h.includes('media_valor_imovel')) ;
+
+      metricColumnLabel = {};
+      metricColumnLabel.m2 = metricIdx.m2 !== -1 ? String(rows[0][metricIdx.m2]) : 'R$/m² (não encontrada)';
+      metricColumnLabel.imovel = metricIdx.imovel !== -1 ? String(rows[0][metricIdx.imovel]) : 'média_valor_imóvel (não encontrada)';
+
+      const registros = rows.slice(1);
+      csvTotalRows = registros.length;
+      csvValidRowsByMetric = { m2: 0, imovel: 0 };
+
+      // acumuladores por métrica
+      const bairroSoma = { m2: {}, imovel: {} };
+      const bairroCnt = { m2: {}, imovel: {} };
+      const logSoma = { m2: {}, imovel: {} };
+      const logCnt = { m2: {}, imovel: {} };
+
+      for (const row of registros) {
+        const bairroRaw = (row[idxBairro] || '').trim();
+        if (!bairroRaw) continue;
+        const key = normalizeName(bairroRaw);
+
+        for (const mk of Object.keys(METRICS)) {
+          const idx = metricIdx[mk];
+          if (idx === -1 || idx >= row.length) continue;
+          const v = parseBRL(row[idx]);
+          if (!Number.isFinite(v) || v <= 0) continue;
+          csvValidRowsByMetric[mk] = (csvValidRowsByMetric[mk] || 0) + 1;
+
+          bairroSoma[mk][key] = (bairroSoma[mk][key] || 0) + v;
+          bairroCnt[mk][key] = (bairroCnt[mk][key] || 0) + 1;
+
+          if (idxLogradouro !== -1 && idxLogradouro < row.length) {
+            const logRaw = (row[idxLogradouro] || '').trim();
+            if (logRaw) {
+              const lk = normalizeName(logRaw);
+              logSoma[mk][lk] = (logSoma[mk][lk] || 0) + v;
+              logCnt[mk][lk] = (logCnt[mk][lk] || 0) + 1;
+              logRawByKey[lk] = logRaw;
+              logBairroByKey[lk] = bairroRaw;
+            }
+          }
+        }
+      }
+
+      // calcular médias e stats por métrica
+      bairroMeansByMetric = {};
+      logMeansByMetric = {};
+      bairroStatsByMetric = {};
+      logStatsByMetric = {};
+      logCountByMetric = logCnt;
+
+      for (const mk of Object.keys(METRICS)) {
+        const bMeans = {};
+        for (const k of Object.keys(bairroSoma[mk])) {
+          bMeans[k] = bairroSoma[mk][k] / bairroCnt[mk][k];
+        }
+        bairroMeansByMetric[mk] = bMeans;
+        const bVals = Object.values(bMeans).filter(Number.isFinite).sort((a,b)=>a-b);
+        bairroStatsByMetric[mk] = {
+          min: bVals.length ? bVals[0] : 0,
+          max: bVals.length ? bVals[bVals.length-1] : 0,
+          p05: percentile(bVals, 0.05),
+          p95: percentile(bVals, 0.95),
+        };
+
+        const lMeans = {};
+        for (const k of Object.keys(logSoma[mk])) {
+          lMeans[k] = logSoma[mk][k] / logCnt[mk][k];
+        }
+        logMeansByMetric[mk] = lMeans;
+        const lVals = Object.values(lMeans).filter(Number.isFinite).sort((a,b)=>a-b);
+        logStatsByMetric[mk] = {
+          min: lVals.length ? lVals[0] : 0,
+          max: lVals.length ? lVals[lVals.length-1] : 0,
+          p05: percentile(lVals, 0.05),
+          p95: percentile(lVals, 0.95),
+        };
+      }
+
+      applyMetric(activeMetric);
+    }
+
+    function applyMetric(metricKey) {
+      activeMetric = METRICS[metricKey] ? metricKey : 'm2';
+      bairroValues = bairroMeansByMetric[activeMetric] || {};
+      logradouroValues = logMeansByMetric[activeMetric] || {};
+
+      const bStats = bairroStatsByMetric[activeMetric] || { min: 0, max: 0, p05: 0, p95: 0 };
+      minValue = bStats.min;
+      maxValue = bStats.max;
+      bairroP05 = bStats.p05;
+      bairroP95 = bStats.p95;
+
+      const lStats = logStatsByMetric[activeMetric] || { min: 0, max: 0, p05: 0, p95: 0 };
+      logMin = lStats.min;
+      logMax = lStats.max;
+      logP05 = lStats.p05;
+      logP95 = lStats.p95;
+
+      // rankings por logradouro
+      const counts = logCountByMetric[activeMetric] || {};
+      const logItems = Object.keys(logradouroValues).map((lk) => ({
+        nameRaw: logRawByKey[lk] || lk,
+        nameKey: lk,
+        value: logradouroValues[lk],
+        bairro: (logBairroByKey[lk] || '').replace(/\s+/g, ' ').trim(),
+        n: counts[lk] || 0
+      })).sort((a,b) => (b.value||0) - (a.value||0));
+      topLogradouros = logItems.slice(0, 200);
+      bottomLogradouros = [...logItems].reverse().slice(0, 200);
+
+      updateLegend();
+      renderPanel();
+      restyle();
+      restyleOSM();
+
+      const valid = csvValidRowsByMetric[activeMetric] || 0;
+      updateStats(csvTotalRows, valid);
+    }
+
+    async function loadLocalCSV() {
+      setLoading('Lendo CSV local…');
+      // Cache-buster + no-store para refletir imediatamente atualizações do CSV
+      const res = await fetch(`${LOCAL_CSV}?v=${Date.now()}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error('Não foi possível abrir itbi_valor_m2.csv');
+      const csvText = await res.text();
+      const rows = parseCSVSemicolon(csvText);
+      computeAggregates(rows);
+      await loadGeojsonOnce();
+      restyle();
+      if (osmEnabled) await loadOSMInView(false);
+      hideLoading();
+    }
+
+    function handleCSVUpload(e) {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setLoading('Lendo CSV selecionado…');
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        try {
+          const text = String(ev.target.result || '');
+          const rows = parseCSVSemicolon(text);
+          computeAggregates(rows);
+          await loadGeojsonOnce();
+          restyle();
+          if (osmEnabled) await loadOSMInView(true);
+          hideLoading();
+        } catch (err) {
+          console.error(err);
+          loadingStatusEl.textContent = `Erro: ${err.message || err}`;
+          loadingStatusEl.style.color = '#d32f2f';
+          setTimeout(() => hideLoading(), 1800);
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function init() {
+      map = L.map('map', { preferCanvas: true }).setView([-22.9068, -43.1729], 11);
+      // Mapas de fundo (tiles) – opções parecidas com “Mapa/Satélite”
+      const baseLayers = {
+        'Rua (OSM)': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '&copy; OpenStreetMap'
+        }),
+        'Rua (OSM HOT)': L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '&copy; OpenStreetMap, tiles HOT'
+        }),
+        'Claro (Carto Positron)': L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+          maxZoom: 20,
+          attribution: '&copy; OpenStreetMap, &copy; CARTO'
+        }),
+        'Escuro (Carto Dark)': L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+          maxZoom: 20,
+          attribution: '&copy; OpenStreetMap, &copy; CARTO'
+        }),
+        'Topográfico (OpenTopoMap)': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+          maxZoom: 17,
+          attribution: '&copy; OpenStreetMap, &copy; OpenTopoMap'
+        }),
+        'Satélite (Esri)': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+          maxZoom: 19,
+          attribution: 'Tiles &copy; Esri'
+        }),
+        'Topo (Esri)': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
+          maxZoom: 19,
+          attribution: 'Tiles &copy; Esri'
+        })
+      };
+
+      let currentBaseName = 'Rua (OSM)';
+      let currentBaseLayer = baseLayers[currentBaseName];
+      currentBaseLayer.addTo(map);
+
+      function setBaseLayer(name) {
+        if (!baseLayers[name]) return;
+        if (currentBaseLayer) map.removeLayer(currentBaseLayer);
+        currentBaseName = name;
+        currentBaseLayer = baseLayers[name];
+        currentBaseLayer.addTo(map);
+      }
+
+      // Preencher select do painel
+      const sel = document.getElementById('basemap-select');
+      sel.innerHTML = '';
+      Object.keys(baseLayers).forEach((name) => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        sel.appendChild(opt);
+      });
+      sel.value = currentBaseName;
+      sel.addEventListener('change', () => setBaseLayer(sel.value));
+
+      document.getElementById('btn-basemap-street').addEventListener('click', () => { sel.value = 'Rua (OSM)'; setBaseLayer(sel.value); });
+      document.getElementById('btn-basemap-sat').addEventListener('click', () => { sel.value = 'Satélite (Esri)'; setBaseLayer(sel.value); });
+      document.getElementById('btn-basemap-dark').addEventListener('click', () => { sel.value = 'Escuro (Carto Dark)'; setBaseLayer(sel.value); });
+
+      document.getElementById('refresh-btn').addEventListener('click', () => loadLocalCSV().catch(showError));
+      document.getElementById('csv-file-input').addEventListener('change', handleCSVUpload);
+      document.getElementById('opacity-slider').addEventListener('input', (e) => {
+        opacity = parseFloat(e.target.value);
+        restyle();
+      });
+
+      // Painel
+      document.getElementById('search').addEventListener('input', renderPanel);
+      document.getElementById('tab-top').addEventListener('click', () => {
+        currentTab = 'top';
+        document.getElementById('tab-top').classList.add('active');
+        document.getElementById('tab-bottom').classList.remove('active');
+        document.getElementById('tab-bairros').classList.remove('active');
+        renderPanel();
+      });
+      document.getElementById('tab-bottom').addEventListener('click', () => {
+        currentTab = 'bottom';
+        document.getElementById('tab-top').classList.remove('active');
+        document.getElementById('tab-bottom').classList.add('active');
+        document.getElementById('tab-bairros').classList.remove('active');
+        renderPanel();
+      });
+      document.getElementById('tab-bairros').addEventListener('click', () => {
+        currentTab = 'bairros';
+        document.getElementById('tab-top').classList.remove('active');
+        document.getElementById('tab-bottom').classList.remove('active');
+        document.getElementById('tab-bairros').classList.add('active');
+        renderPanel();
+      });
+
+      // OSM
+      document.getElementById('toggle-logradouros').addEventListener('change', async (e) => {
+        osmEnabled = !!e.target.checked;
+        document.getElementById('osm-status').textContent = osmEnabled ? 'OSM: ligado' : 'OSM: desligado';
+        if (!osmEnabled) {
+          if (osmLayer) {
+            try { osmLayer.remove(); } catch {}
+            osmLayer = null;
+          }
+          osmIndex.clear();
+          renderPanel();
+          return;
+        }
+        try {
+          await loadOSMInView(false);
+          renderPanel();
+        } catch (err) {
+          showError(err);
+        }
+      });
+
+      map.on('moveend', () => {
+        if (!osmEnabled) return;
+        loadOSMInView(false).catch((err) => console.warn(err));
+      });
+
+      // Janelas móveis/retráteis
+      let zCounter = 3000;
+      function bringToFront(el) {
+        zCounter += 1;
+        el.style.zIndex = String(zCounter);
+      }
+      function setCollapsed(el, collapsed) {
+        el.classList.toggle('collapsed', collapsed);
+      }
+      function setupPanel(panelEl, headerEl, collapseBtnEl) {
+        bringToFront(panelEl);
+        panelEl.addEventListener('mousedown', () => bringToFront(panelEl));
+        if (typeof L !== 'undefined' && L.DomEvent) {
+          L.DomEvent.disableClickPropagation(panelEl);
+          L.DomEvent.disableScrollPropagation(panelEl);
+        }
+
+        let dragging = false;
+        let startX = 0, startY = 0;
+        let startLeft = 0, startTop = 0;
+        headerEl.addEventListener('mousedown', (ev) => {
+          if (ev.button !== 0) return;
+          dragging = true;
+          bringToFront(panelEl);
+          const rect = panelEl.getBoundingClientRect();
+          startX = ev.clientX;
+          startY = ev.clientY;
+          startLeft = rect.left;
+          startTop = rect.top;
+          panelEl.style.left = `${rect.left}px`;
+          panelEl.style.top = `${rect.top}px`;
+          panelEl.style.right = 'auto';
+          panelEl.style.bottom = 'auto';
+          document.body.style.userSelect = 'none';
+          ev.preventDefault();
+          ev.stopPropagation();
+        });
+        window.addEventListener('mousemove', (ev) => {
+          if (!dragging) return;
+          const dx = ev.clientX - startX;
+          const dy = ev.clientY - startY;
+          panelEl.style.left = `${startLeft + dx}px`;
+          panelEl.style.top = `${startTop + dy}px`;
+        });
+        window.addEventListener('mouseup', () => {
+          if (!dragging) return;
+          dragging = false;
+          document.body.style.userSelect = '';
+        });
+
+        if (collapseBtnEl) {
+          collapseBtnEl.addEventListener('click', (ev) => {
+            const collapsed = !panelEl.classList.contains('collapsed');
+            setCollapsed(panelEl, collapsed);
+            collapseBtnEl.textContent = collapsed ? 'Expandir' : 'Recolher';
+            ev.preventDefault();
+            ev.stopPropagation();
+          });
+        }
+      }
+
+      setupPanel(document.getElementById('logradouros-panel'), document.getElementById('hdr-logradouros'), document.getElementById('btn-collapse-logradouros'));
+      setupPanel(document.getElementById('legend'), document.getElementById('hdr-legend'), document.getElementById('btn-collapse-legend'));
+      setupPanel(document.getElementById('status'), document.getElementById('hdr-status'), document.getElementById('btn-collapse-status'));
+      setupPanel(document.getElementById('basemap-panel'), document.getElementById('hdr-basemap'), document.getElementById('btn-collapse-basemap'));
+
+      document.getElementById('toggle-bairro-fill').addEventListener('change', (e) => {
+        bairroFillEnabled = !!e.target.checked;
+        restyle();
+      });
+
+      document.getElementById('metric-select').addEventListener('change', (e) => {
+        applyMetric(e.target.value);
+        // se OSM ligado, recarregar a camada para refletir a nova métrica
+        if (osmEnabled) loadOSMInView(false).catch((err) => console.warn(err));
+      });
+
+      loadLocalCSV().catch(showError);
+    }
+
+    function showError(err) {
+      console.error(err);
+      loadingStatusEl.textContent = `Erro: ${err.message || err}`;
+      loadingStatusEl.style.color = '#d32f2f';
+      setTimeout(() => hideLoading(), 2000);
+    }
+
+    init();
+  </script>
+</body>
+</html>
