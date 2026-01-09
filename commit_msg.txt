@@ -1,0 +1,17 @@
+﻿feat: filtros de uso e tipologias + troca do CSV base
+
+O que foi feito:
+- Adicionado painel de filtros (Uso do imÃ³vel e Tipologias) no mapa Leaflet.
+- Filtro de uso considera 'NÃƒO RESIDENCIAL' como categoria comercial e recalcula agregaÃ§Ãµes.
+- Tipologias sÃ£o lidas da coluna 'principais_tipologias' e afetam as mÃ©dias/cores do mapa.
+- Fonte de dados padrÃ£o trocada para 'ITBI_transacoes_logradouro_mes.csv'.
+
+Como foi feito:
+- O HTML reprocessa o CSV no navegador ao aplicar/limpar filtros.
+- As mÃ©dias por bairro e por logradouro sÃ£o recomputadas e o estilo/legenda do mapa Ã© atualizado.
+- O CSV foi copiado para o repositÃ³rio com nome curto para facilitar o fetch via python -m http.server.
+
+Arquivos alterados/adicionados:
+- mapa_calor_valor_m2_leaflet.html
+- ITBI_transacoes_logradouro_mes.csv
+- README.md

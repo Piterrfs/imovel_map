@@ -143,12 +143,96 @@
       background: white;
     }
     #basemap-panel .btnrow { display:flex; gap:8px; flex-wrap:wrap; }
+
+    /* Filtros (estilo igual ao "mapa_calor_valor_m2_leaflet.html" do projeto original) */
+    .filtros {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 2000 !important;
+      background: white;
+      background: rgba(255,255,255,0.98);
+      padding: 15px;
+      border-radius: 5px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.3);
+      max-width: 300px;
+      max-height: 80vh;
+      overflow-y: auto;
+      display: block !important;
+      visibility: visible !important;
+    }
+
+    .filtros h4 {
+      margin: 0 0 10px 0;
+      color: #333;
+      font-size: 14px;
+    }
+
+    .filtros-group {
+      margin-bottom: 15px;
+    }
+
+    .filtros-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+      font-size: 12px;
+      color: #555;
+    }
+
+    .filtros-group .checkbox-group {
+      max-height: 150px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      padding: 5px;
+      border-radius: 3px;
+      min-height: 50px;
+      background: #f9f9f9;
+    }
+
+    .filtros-group .checkbox-group:empty::before {
+      content: "Carregando opções...";
+      color: #999;
+      font-style: italic;
+      padding: 10px;
+      display: block;
+    }
+
+    .filtros-group input[type="checkbox"] {
+      margin-right: 5px;
+    }
+
+    .filtros-group .checkbox-item {
+      margin: 5px 0;
+      font-size: 11px;
+    }
+
+    .filtros button {
+      width: 100%;
+      padding: 8px;
+      margin-top: 10px;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .filtros button:hover {
+      background: #45a049;
+    }
+
+    .filtros button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 <body>
   <div id="header">
     <h1>Mapa (RJ) — Valor do m² (ITBI) por bairro + logradouros</h1>
-    <p>Fonte: CSV local <code>itbi_valor_m2.csv</code> + limites de bairros (<code>rj_bairros_2022.geojson</code>).</p>
+    <p>Fonte: CSV local <code>ITBI_transacoes_logradouro_mes.csv</code> + limites de bairros (<code>rj_bairros_2022.geojson</code>).</p>
   </div>
 
   <div id="controls">
@@ -188,6 +272,20 @@
   </div>
 
   <div id="map"></div>
+
+  <div class="filtros" id="filtros" style="display: block !important; visibility: visible !important; opacity: 1 !important; position: absolute !important; top: 10px !important; left: 10px !important; z-index: 2000 !important;">
+    <h4>Filtros</h4>
+    <div class="filtros-group">
+      <label>Uso do Imóvel:</label>
+      <div class="checkbox-group" id="filtro-uso"></div>
+    </div>
+    <div class="filtros-group">
+      <label>Tipologias:</label>
+      <div class="checkbox-group" id="filtro-tipologias"></div>
+    </div>
+    <button id="btn-aplicar-filtros" onclick="aplicarFiltros()">Aplicar Filtros</button>
+    <button id="btn-limpar-filtros" onclick="limparFiltros()" style="background: #f44336; margin-top: 5px;">Limpar Filtros</button>
+  </div>
 
   <div id="basemap-panel" class="panel collapsed">
     <div class="panel-header" id="hdr-basemap">
@@ -257,16 +355,19 @@
     <div class="panel-body" id="body-status">
       <div class="status-item"><span class="status-label">Métrica:</span> <span id="metric-name">—</span></div>
       <div class="status-item"><span class="status-label">Coluna CSV:</span> <span id="metric-col">—</span></div>
-      <div class="status-item"><span class="status-label">Registros CSV:</span> <span id="total-records">0</span></div>
+      <div class="status-item"><span class="status-label">Registros (filtrados):</span> <span id="total-records">0</span></div>
+      <div class="status-item"><span class="status-label">Registros (total):</span> <span id="total-records-all">0</span></div>
       <div class="status-item"><span class="status-label">Com valor válido:</span> <span id="valid-records">0</span></div>
       <div class="status-item"><span class="status-label">Bairros com valor:</span> <span id="bairros-count">0</span></div>
       <div class="status-item"><span class="status-label">Faixa (p05–p95):</span> <span id="range">—</span></div>
+      <div class="status-item"><span class="status-label">Uso:</span> <span id="status-uso">—</span></div>
+      <div class="status-item"><span class="status-label">Tipologias:</span> <span id="status-tipologias">—</span></div>
     </div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
-    const LOCAL_CSV = 'itbi_valor_m2.csv';
+    const LOCAL_CSV = 'ITBI_transacoes_logradouro_mes.csv';
     const GEOJSON_RIO = 'rj_bairros_2022.geojson';
     const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 
@@ -291,6 +392,7 @@
     let activeMetric = 'm2';
     let metricColumnLabel = {}; // metricKey -> header label found
     let csvTotalRows = 0;
+    let csvTotalRowsAll = 0;
     let csvValidRowsByMetric = {}; // metricKey -> valid count
     let bairroMeansByMetric = {};  // metricKey -> {bairroKey: mean}
     let logMeansByMetric = {};     // metricKey -> {logKey: mean}
@@ -314,6 +416,14 @@
     const osmCache = new Map(); // bboxKey -> geojson
     let osmEnabled = false;
     let currentTab = 'top'; // top | bottom | bairros
+
+    // Filtros
+    let cachedRows = null; // CSV parseado (inclui header)
+    let availableTipologias = []; // [{key, label}]
+    let activeFilters = {
+      usos: new Set(['RESIDENCIAL', 'COMERCIAL']),
+      tipologias: null, // null = todas
+    };
 
     function setLoading(msg) {
       loadingEl.classList.remove('hidden');
@@ -479,12 +589,181 @@
       document.getElementById('metric-name').textContent = METRICS[activeMetric]?.label || activeMetric;
       document.getElementById('metric-col').textContent = metricColumnLabel[activeMetric] || '—';
       document.getElementById('total-records').textContent = String(total);
+      document.getElementById('total-records-all').textContent = String(csvTotalRowsAll || 0);
       document.getElementById('valid-records').textContent = String(valid);
       document.getElementById('bairros-count').textContent = String(Object.keys(bairroValues).length);
       document.getElementById('range').textContent = (bairroP95 && bairroP05)
         ? `${bairroP05.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} → ${bairroP95.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}`
         : '—';
+
+      const usoTxt = (() => {
+        const u = activeFilters?.usos;
+        if (!u || u.size === 0) return '—';
+        const parts = [];
+        if (u.has('RESIDENCIAL')) parts.push('Residencial');
+        if (u.has('COMERCIAL')) parts.push('Comercial');
+        return parts.join(' + ') || '—';
+      })();
+      document.getElementById('status-uso').textContent = usoTxt;
+
+      const tipTxt = (() => {
+        const t = activeFilters?.tipologias;
+        if (!t) return 'Todas';
+        if (t.size === 0) return 'Nenhuma';
+        if (t.size === availableTipologias.length) return 'Todas';
+        return `${t.size} selecionadas`;
+      })();
+      document.getElementById('status-tipologias').textContent = tipTxt;
     }
+
+    function usoKeyFromRaw(usoRaw) {
+      const u = normalizeName((usoRaw || '').toString()).toUpperCase();
+      // "NAO RESIDENCIAL" / "NÃO RESIDENCIAL" => COMERCIAL
+      if (u.includes('RESIDENCIAL')) {
+        if (u.includes('NAO') || u.includes('NÃO') || u.includes('NAORESIDENCIAL')) return 'COMERCIAL';
+        return 'RESIDENCIAL';
+      }
+      // fallback: tudo que não for residencial => comercial (não residencial)
+      return 'COMERCIAL';
+    }
+
+    function splitTipologias(tipRaw) {
+      const raw = (tipRaw || '').toString().trim();
+      if (!raw) return [];
+      // suporta múltiplas tipologias no mesmo campo (separadores comuns)
+      return raw
+        .split(/[,+/|]/g)
+        .map(s => s.trim())
+        .filter(Boolean);
+    }
+
+    function buildFilterOptionsFromRows(rows) {
+      if (!rows || rows.length < 2) return;
+      const headers = rows[0].map(h => String(h || '').toLowerCase());
+      const headersNorm = rows[0].map(h => normalizeHeader(String(h || '')));
+      const idxTip = headersNorm.findIndex(h => h.includes('principais_tipologias'));
+      if (idxTip === -1) return;
+
+      const tipMap = new Map(); // key -> label
+      for (const row of rows.slice(1)) {
+        if (!row || !row.length) continue;
+        const tokens = splitTipologias(row[idxTip]);
+        for (const tok of tokens) {
+          const key = normalizeName(tok);
+          if (!key) continue;
+          if (!tipMap.has(key)) tipMap.set(key, tok);
+        }
+      }
+
+      // ordena por label (pt-BR)
+      availableTipologias = [...tipMap.entries()]
+        .map(([key, label]) => ({ key, label }))
+        .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+
+      // se não houver seleção ativa (primeira carga), deixa todas selecionadas
+      if (activeFilters.tipologias === null) {
+        activeFilters.tipologias = new Set(availableTipologias.map(t => t.key));
+      }
+
+      // Render UI (estilo "imagem 1")
+      renderUsoOptions();
+      renderTipologiasOptions();
+    }
+
+    function readFiltersFromUI() {
+      const usos = new Set();
+      document.querySelectorAll('#filtro-uso input[type="checkbox"]:checked').forEach((el) => {
+        const raw =
+          (el?.dataset?.usoKey) ||
+          (el?.value) ||
+          (el?.parentElement ? el.parentElement.textContent : '') ||
+          '';
+        const k = usoKeyFromRaw(raw);
+        if (k) usos.add(k);
+      });
+
+      // Tipologias
+      const tipSet = new Set();
+      document.querySelectorAll('#filtro-tipologias input[type="checkbox"]').forEach((el) => {
+        if (!el.checked) return;
+        const raw = (el?.dataset?.tipKey) || (el?.value) || (el?.parentElement ? el.parentElement.textContent : '') || '';
+        const k = normalizeName(raw);
+        if (k) tipSet.add(k);
+      });
+
+      return { usos, tipologias: tipSet };
+    }
+
+    function applyFiltersFromUI() {
+      if (!cachedRows) return;
+      const f = readFiltersFromUI();
+      activeFilters.usos = f.usos;
+      activeFilters.tipologias = f.tipologias;
+      // recalcula sem recarregar o CSV do servidor
+      try {
+        computeAggregates(cachedRows, activeFilters);
+        restyle();
+        restyleOSM();
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function clearFiltersUI() {
+      document.querySelectorAll('#filtro-uso input[type="checkbox"]').forEach((el) => { el.checked = true; });
+      document.querySelectorAll('#filtro-tipologias input[type="checkbox"]').forEach((el) => { el.checked = true; });
+      applyFiltersFromUI();
+    }
+
+    // Render dos filtros (UI)
+    function renderUsoOptions() {
+      const el = document.getElementById('filtro-uso');
+      if (!el) return;
+      el.innerHTML = '';
+      const items = [
+        { key: 'RESIDENCIAL', label: 'RESIDENCIAL' },
+        { key: 'COMERCIAL', label: 'NÃO RESIDENCIAL' },
+      ];
+      for (const it of items) {
+        const div = document.createElement('div');
+        div.className = 'checkbox-item';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = activeFilters?.usos ? activeFilters.usos.has(it.key) : true;
+        cb.dataset.usoKey = it.key;
+        cb.value = it.label;
+        const label = document.createElement('label');
+        label.textContent = it.label;
+        div.appendChild(cb);
+        div.appendChild(label);
+        el.appendChild(div);
+      }
+    }
+
+    function renderTipologiasOptions() {
+      const el = document.getElementById('filtro-tipologias');
+      if (!el) return;
+      el.innerHTML = '';
+      if (!availableTipologias.length) return;
+      for (const t of availableTipologias) {
+        const div = document.createElement('div');
+        div.className = 'checkbox-item';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = activeFilters.tipologias ? activeFilters.tipologias.has(t.key) : true;
+        cb.dataset.tipKey = t.key;
+        cb.value = t.label;
+        const label = document.createElement('label');
+        label.textContent = t.label;
+        div.appendChild(cb);
+        div.appendChild(label);
+        el.appendChild(div);
+      }
+    }
+
+    // API compatível com a UI "imagem 1"
+    function aplicarFiltros() { applyFiltersFromUI(); }
+    function limparFiltros() { clearFiltersUI(); }
 
     async function loadGeojsonOnce() {
       if (geojsonLayer) return;
@@ -707,7 +986,7 @@
       }
     }
 
-    function computeAggregates(rows) {
+    function computeAggregates(rows, filters = null) {
       if (!rows.length) throw new Error('CSV vazio.');
 
       const headers = rows[0].map(h => String(h || '').toLowerCase());
@@ -717,6 +996,9 @@
       if (idxBairro === -1) idxBairro = headers.findIndex(h => h.includes('bairro') && !h.includes('cod'));
       const idxLogradouro = headers.findIndex(h => h.includes('logradouro'));
       if (idxBairro === -1) throw new Error('Coluna "bairro" não encontrada.');
+
+      const idxUso = headers.findIndex(h => h.trim() === 'uso');
+      const idxTip = headersNorm.findIndex(h => h.includes('principais_tipologias'));
 
       // localizar colunas por métrica
       const metricIdx = { m2: -1, imovel: -1 };
@@ -730,7 +1012,7 @@
       metricColumnLabel.imovel = metricIdx.imovel !== -1 ? String(rows[0][metricIdx.imovel]) : 'média_valor_imóvel (não encontrada)';
 
       const registros = rows.slice(1);
-      csvTotalRows = registros.length;
+      csvTotalRowsAll = registros.length;
       csvValidRowsByMetric = { m2: 0, imovel: 0 };
 
       // acumuladores por métrica
@@ -739,10 +1021,39 @@
       const logSoma = { m2: {}, imovel: {} };
       const logCnt = { m2: {}, imovel: {} };
 
+      // limpa caches de labels do painel
+      logRawByKey = {};
+      logBairroByKey = {};
+
+      const allowedUsos = filters?.usos instanceof Set ? filters.usos : null;
+      const allowedTip = filters?.tipologias instanceof Set ? filters.tipologias : null;
+
+      let registrosFiltrados = 0;
+
       for (const row of registros) {
+        if (!row || !row.length) continue;
+
+        // filtros
+        if (idxUso !== -1 && allowedUsos) {
+          const usoKey = usoKeyFromRaw(row[idxUso]);
+          if (!allowedUsos.has(usoKey)) continue;
+        }
+        if (idxTip !== -1 && allowedTip) {
+          const tokens = splitTipologias(row[idxTip]);
+          if (tokens.length) {
+            const ok = tokens.some(tok => allowedTip.has(normalizeName(tok)));
+            if (!ok) continue;
+          } else {
+            // sem tipologia => não entra se existe filtro de tipologia
+            continue;
+          }
+        }
+
         const bairroRaw = (row[idxBairro] || '').trim();
         if (!bairroRaw) continue;
         const key = normalizeName(bairroRaw);
+
+        registrosFiltrados += 1;
 
         for (const mk of Object.keys(METRICS)) {
           const idx = metricIdx[mk];
@@ -766,6 +1077,8 @@
           }
         }
       }
+
+      csvTotalRows = registrosFiltrados;
 
       // calcular médias e stats por métrica
       bairroMeansByMetric = {};
@@ -850,7 +1163,10 @@
       if (!res.ok) throw new Error('Não foi possível abrir itbi_valor_m2.csv');
       const csvText = await res.text();
       const rows = parseCSVSemicolon(csvText);
-      computeAggregates(rows);
+      cachedRows = rows;
+      // popula lista de tipologias uma vez por carga de CSV
+      buildFilterOptionsFromRows(rows);
+      computeAggregates(rows, activeFilters);
       await loadGeojsonOnce();
       restyle();
       if (osmEnabled) await loadOSMInView(false);
@@ -866,7 +1182,9 @@
         try {
           const text = String(ev.target.result || '');
           const rows = parseCSVSemicolon(text);
-          computeAggregates(rows);
+          cachedRows = rows;
+          buildFilterOptionsFromRows(rows);
+          computeAggregates(rows, activeFilters);
           await loadGeojsonOnce();
           restyle();
           if (osmEnabled) await loadOSMInView(true);
