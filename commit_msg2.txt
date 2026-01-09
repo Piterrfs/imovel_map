@@ -1,0 +1,13 @@
+﻿feat: atalhos nos filtros + unidade correta no tooltip
+
+O que foi feito:
+- Adicionados botÃµes "Marcar todos" e "Limpar todos" para os filtros de Uso do imÃ³vel e Tipologias.
+- Corrigido tooltip (bairros e logradouros) para sÃ³ exibir "/mÂ²" quando a mÃ©trica selecionada for R$/mÂ².
+
+Como foi feito:
+- InclusÃ£o de uma helper `formatMetricValue()` que concatena a unidade da mÃ©trica ativa (METRICS[activeMetric].unit).
+- SubstituiÃ§Ã£o do texto hardcoded " / mÂ²" nos tooltips pelos valores formatados.
+- FunÃ§Ãµes `marcarTodos/limparTodos` que selecionam/desmarcam checkboxes do container do filtro.
+
+Arquivo:
+- mapa_calor_valor_m2_leaflet.html

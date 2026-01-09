@@ -227,6 +227,23 @@
       background: #ccc;
       cursor: not-allowed;
     }
+
+    .filtros .btn-row {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .filtros .btn-row button {
+      width: 50%;
+      margin-top: 0;
+      background: #e0e0e0;
+      color: #333;
+    }
+
+    .filtros .btn-row button:hover {
+      background: #d5d5d5;
+    }
   </style>
 </head>
 <body>
@@ -278,10 +295,18 @@
     <div class="filtros-group">
       <label>Uso do Imóvel:</label>
       <div class="checkbox-group" id="filtro-uso"></div>
+      <div class="btn-row">
+        <button type="button" onclick="marcarTodos('filtro-uso')">Marcar todos</button>
+        <button type="button" onclick="limparTodos('filtro-uso')">Limpar todos</button>
+      </div>
     </div>
     <div class="filtros-group">
       <label>Tipologias:</label>
       <div class="checkbox-group" id="filtro-tipologias"></div>
+      <div class="btn-row">
+        <button type="button" onclick="marcarTodos('filtro-tipologias')">Marcar todos</button>
+        <button type="button" onclick="limparTodos('filtro-tipologias')">Limpar todos</button>
+      </div>
     </div>
     <button id="btn-aplicar-filtros" onclick="aplicarFiltros()">Aplicar Filtros</button>
     <button id="btn-limpar-filtros" onclick="limparFiltros()" style="background: #f44336; margin-top: 5px;">Limpar Filtros</button>
@@ -455,6 +480,11 @@
       if (!cleaned) return null;
       const num = Number(cleaned);
       return Number.isFinite(num) ? num : null;
+    }
+
+    function formatMetricValue(v) {
+      const unit = METRICS[activeMetric]?.unit || '';
+      return `${v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}${unit}`;
     }
 
     function percentile(sorted, p) {
@@ -764,6 +794,11 @@
     // API compatível com a UI "imagem 1"
     function aplicarFiltros() { applyFiltersFromUI(); }
     function limparFiltros() { clearFiltersUI(); }
+    function setCheckboxes(containerId, checked) {
+      document.querySelectorAll(`#${containerId} input[type="checkbox"]`).forEach((cb) => { cb.checked = !!checked; });
+    }
+    function marcarTodos(containerId) { setCheckboxes(containerId, true); }
+    function limparTodos(containerId) { setCheckboxes(containerId, false); }
 
     async function loadGeojsonOnce() {
       if (geojsonLayer) return;
@@ -780,7 +815,7 @@
             const key = normalizeName(nome);
             const v = bairroValues[key];
             const txt = Number.isFinite(v)
-              ? `${v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} / m²`
+              ? formatMetricValue(v)
               : 'Sem dado';
             return `<div class='bairro-tooltip'><b>${nome}</b><div>${txt}</div></div>`;
           };
@@ -914,7 +949,7 @@
           const k = normalizeName(name);
           const v = logradouroValues[k];
           const txt = Number.isFinite(v)
-            ? `${v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} / m²`
+            ? formatMetricValue(v)
             : 'Sem dado no CSV';
           layer.bindTooltip(`<div class='bairro-tooltip'><b>${name}</b><div>${txt}</div></div>`, { sticky: true });
           const arr = osmIndex.get(k) || [];
